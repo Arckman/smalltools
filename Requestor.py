@@ -1,6 +1,6 @@
 # -.-coding:utf-8
 import requests,urllib
-import threading
+import threading,multiprocessing
 from Queue import Queue
 import time
 
@@ -22,59 +22,60 @@ class ListReader(threading.Thread):
         threading.Thread.__init__(self)
         self.q=q
     def run(self):
-        global list,url
+        global list,num
         print 'Reading files...'
+        i=0
         for file in list:
             f=open(file)
             for line in f.readlines():
                 u=''
                 try:
-                    u=url+urllib.quote(line.strip().replace('\x0a','').decode('GBK').encode('u8'))
+                    u=line.strip().replace('\x0a','')
                     #u=url+line
                     #print u
-                    self.q.put(u)
+                    self.q[i].append(u)
+                    i=(i+1)%num
                 except Exception as e:
                     #pass
-                    print 'line: ['+u+':'+repr(u)+'] in file '+file+' can not be decoded!'
+                    #print 'line: ['+u+':'+repr(u)+'] in file '+file+' can not be decoded!'
                     print e
                     #return -1
             f.close()
         print 'Reading files End!'
 
-class Requestor(threading.Thread):
+class Requestor(multiprocessing.Process):
     def __init__(self,q):
-        threading.Thread.__init__(self)
+        multiprocessing.Process.__init__(self)
         self.q=q
     def run(self):
-        global response_code
-        #print self.q.empty()
+        global url
         s=requests.session()
-        while not self.q.empty():
-            u=self.q.get()
-            #print u
+        for u in self.q:
             try:
-                r=s.get(u)
+                tempUrl=url+urllib.quote(u.decode('gbk').encode('u8'))
+                r=s.get(tempUrl)
                 if r.status_code==200:
-                    print urllib.unquote(u).decode('u8').encode('gbk')
+                    print url+u
             except Exception as e:
-                #pass
                 print u
                 print e
-                #s.close()
-                #return -1
         s.close()
+
+
 def main():
+    global num
     print 'Starting...'
     start=time.time()
-    q=Queue()
+    q=[[] for i in range(num)]
     lr=ListReader(q)
     lr.start()
     lr.join()
-    time.sleep(1)
+    #time.sleep(1)
     for i in range(num):
-        t=Requestor(q)
-        t.start()
-        t.join()
+        p=Requestor(q[i])
+        p.start()
+    for p in multiprocessing.active_children():
+        p.join()
     print time.time()-start
 
 if __name__=='__main__':
